@@ -1,0 +1,6 @@
+{
+  "name": "EVA BUILD CLI",
+  "description": "Dedicated AI-powered Android coding workstation integrating Claude Code CLI and REA for real-time mobile development, debugging, and building.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
