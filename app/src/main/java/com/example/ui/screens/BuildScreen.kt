@@ -27,6 +27,11 @@ import com.example.ui.EvaWorkstationViewModel
 import com.example.ui.components.WorkstationCard
 import com.example.ui.theme.*
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+
 @Composable
 fun BuildScreen(viewModel: EvaWorkstationViewModel) {
     val isBuilding by viewModel.buildService.isBuilding.collectAsState()
@@ -35,8 +40,17 @@ fun BuildScreen(viewModel: EvaWorkstationViewModel) {
     val lastSuccess by viewModel.buildService.lastBuildSuccess.collectAsState()
     val generatedApks by viewModel.buildService.generatedApks.collectAsState()
     val listState = rememberLazyListState()
+    val clipboardManager = LocalClipboardManager.current
 
     var showApkDetailsDialog by remember { mutableStateOf<ApkArtifact?>(null) }
+
+    val apkPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.importApk(uri)
+        }
+    }
 
     LaunchedEffect(buildLogs.size) {
         if (buildLogs.isNotEmpty()) {
@@ -234,22 +248,43 @@ fun BuildScreen(viewModel: EvaWorkstationViewModel) {
             }
         }
 
-        // Generated APK & Artifact Management Section
+        // Generated APK & Artifact Management Section + SAF Import Button
         item {
-            Text(
-                text = "APK & ARTIFACT MANAGEMENT",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextMuted,
-                letterSpacing = 1.sp
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "APK & ARTIFACT MANAGEMENT",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextMuted,
+                    letterSpacing = 1.sp
+                )
+
+                // Step 1: SAF OpenDocument File Picker Button
+                Button(
+                    onClick = {
+                        apkPickerLauncher.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream", "*/*"))
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceElevated),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CyanAccent.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Icon(Icons.Default.FileUpload, contentDescription = "Import APK", tint = CyanAccent, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Import APK", fontSize = 12.sp, color = CyanAccent, fontWeight = FontWeight.Bold)
+                }
+            }
         }
 
         if (generatedApks.isEmpty()) {
             item {
                 WorkstationCard {
                     Text(
-                        text = "No generated APKs found yet. Run 'Build Debug APK' above to produce and verify a genuine build artifact.",
+                        text = "No generated APKs found yet. Run 'Build Debug APK' above or tap 'Import APK' to inspect an existing Android binary.",
                         fontSize = 12.sp,
                         color = TextSecondary
                     )
@@ -271,10 +306,15 @@ fun BuildScreen(viewModel: EvaWorkstationViewModel) {
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(EmeraldSuccessMuted),
+                                    .background(if (apk.variant == "Imported") PurpleReaMuted else EmeraldSuccessMuted),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.Android, contentDescription = null, tint = EmeraldSuccess, modifier = Modifier.size(20.dp))
+                                Icon(
+                                    Icons.Default.Android,
+                                    contentDescription = null,
+                                    tint = if (apk.variant == "Imported") PurpleRea else EmeraldSuccess,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
 
                             Column {
@@ -308,10 +348,19 @@ fun BuildScreen(viewModel: EvaWorkstationViewModel) {
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
+
+                                if (apk.sha256.isNotBlank()) {
+                                    Text(
+                                        text = "SHA256: ${apk.sha256.take(12)}...${apk.sha256.takeLast(6)}",
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = TextMuted
+                                    )
+                                }
                             }
                         }
 
-                        // Actions: Install, Share, Details
+                        // Actions: Install, Share, Details, Delete
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             IconButton(
                                 onClick = { viewModel.installApk(apk) },
@@ -331,6 +380,12 @@ fun BuildScreen(viewModel: EvaWorkstationViewModel) {
                             ) {
                                 Icon(Icons.Default.Info, contentDescription = "Inspect APK", tint = TextSecondary)
                             }
+                            IconButton(
+                                onClick = { viewModel.deleteApk(apk) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = "Delete APK", tint = RoseError)
+                            }
                         }
                     }
                 }
@@ -338,20 +393,75 @@ fun BuildScreen(viewModel: EvaWorkstationViewModel) {
         }
     }
 
-    // Inspect APK Dialog
+    // Inspect APK Dialog with SHA-256 and MD5 Hash Inspector
     showApkDetailsDialog?.let { apk ->
         AlertDialog(
             onDismissRequest = { showApkDetailsDialog = null },
-            title = { Text(apk.fileName, color = TextPrimary) },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.Security, contentDescription = null, tint = CyanAccent)
+                    Text(apk.fileName, color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                }
+            },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Path: ${apk.filePath}", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = TextSecondary)
                     Text("File Size: ${apk.formattedSize} (${apk.sizeBytes} bytes)", fontSize = 12.sp, color = TextPrimary)
                     Text("Build Variant: ${apk.variant}", fontSize = 12.sp, color = TextPrimary)
-                    Text("Package Name: ${apk.packageName}", fontSize = 12.sp, color = TextPrimary)
-                    Text("Version: ${apk.versionName} (${apk.versionCode})", fontSize = 12.sp, color = TextPrimary)
-                    Text("Created: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date(apk.createdAt))}", fontSize = 12.sp, color = TextSecondary)
+                    Text("Package: ${apk.packageName}", fontSize = 12.sp, color = TextPrimary)
                     Text("Integrity: 100% Verified Valid APK", fontSize = 12.sp, color = EmeraldSuccess, fontWeight = FontWeight.Bold)
+
+                    HorizontalDivider(color = DarkSurfaceBorder)
+
+                    // SHA-256 Section
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("SHA-256 Checksum:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = CyanAccent)
+                            IconButton(
+                                onClick = { clipboardManager.setText(AnnotatedString(apk.sha256)) },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy SHA-256", tint = TextSecondary, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                        Text(
+                            text = if (apk.sha256.isNotBlank()) apk.sha256 else "Generating SHA-256...",
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = TextPrimary,
+                            lineHeight = 14.sp
+                        )
+                    }
+
+                    // MD5 Section
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("MD5 Checksum:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = PurpleRea)
+                            IconButton(
+                                onClick = { clipboardManager.setText(AnnotatedString(apk.md5)) },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy MD5", tint = TextSecondary, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                        Text(
+                            text = if (apk.md5.isNotBlank()) apk.md5 else "Generating MD5...",
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = TextPrimary
+                        )
+                    }
                 }
             },
             confirmButton = {

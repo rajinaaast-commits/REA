@@ -341,15 +341,15 @@ fun PlanPanel(planSteps: List<PlanStep>, prompt: String) {
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Task ${step.id}: ${step.title}",
+                                text = "Task ${step.id}: ${step.cleanTitle}",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = TextPrimary
                             )
-                            if (step.detail.isNotBlank()) {
+                            if (step.cleanDetail.isNotBlank()) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = step.detail,
+                                    text = step.cleanDetail,
                                     fontSize = 12.sp,
                                     color = TextSecondary
                                 )
@@ -429,19 +429,20 @@ fun ActivityEventCard(event: ActivityEvent) {
                     )
                 }
 
-                if (event.description.isNotBlank()) {
+                if (event.cleanText.isNotBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = event.description,
+                        text = event.cleanText,
                         fontSize = 12.sp,
                         color = TextSecondary,
                         lineHeight = 16.sp
                     )
                 }
 
-                if (event.codeSnippet != null) {
+                val code = event.extractedCode
+                if (code != null) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    CodeSnippetView(code = event.codeSnippet)
+                    CodeSnippetView(code = code)
                 }
             }
         }
